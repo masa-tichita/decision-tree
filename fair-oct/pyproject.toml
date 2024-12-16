@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "fair-oct"
+version = "0.1.0"
+description = ""
+authors = ["masa-tichita <bunmamasa@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+polars = "^1.17.1"
+numpy = "^2.2.0"
+pandas = "^2.2.3"
+pydantic = "^2.10.3"
+pydantic-settings = "^2.7.0"
+mip = "1.16.0pre"
+loguru = "^0.7.3"
+
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.8.3"
+pyright = "^1.1.390"
+poethepoet = "^0.31.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
