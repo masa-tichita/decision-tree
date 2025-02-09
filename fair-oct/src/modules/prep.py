@@ -60,7 +60,37 @@ def create_ancestors(B: List[int], T: List[int]) -> Dict[int, List[int]]:
             parent = parent // 2  # さらに上の祖先へ
 
         A[n] = ancestors[::-1]  # 上位の祖先から順に並べる
+
     return A
+
+
+def create_children(B: List[int], Node: List[int]) -> Dict[int, dict[str, int]]:
+    """
+    C(n) を生成する関数。B（ブランチノード）と T（葉ノード）から、
+    それぞれのノード n に対する子ノード集合 C(n) を返す。
+
+    Args:
+        B: ブランチノードのリスト
+        T: 葉ノードのリスト
+    Returns:
+        C: 各ノード n に対する子ノードの辞書
+    """
+    C = {}
+    for n in B:
+        children = {}
+        left_child = 2 * n  # 左の子ノード
+        right_child = 2 * n + 1  # 右の子ノード
+
+        # 左の子ノードが範囲内にあれば追加
+        if left_child <= Node[-1]:
+            children["left"] = left_child
+
+        # 右の子ノードが範囲内にあれば追加
+        if right_child <= Node[-1]:
+            children["right"] = right_child
+
+        C[n] = children
+    return C
 
 
 def create_feature_mapping(df: pl.DataFrame) -> Dict[int, Dict[str, int]]:
@@ -83,10 +113,14 @@ def create_feature_mapping(df: pl.DataFrame) -> Dict[int, Dict[str, int]]:
 
 
 if __name__ == "__main__":
-    compas_data = pl.read_csv(
-        "/Users/masaharu/dev/academic-research/decision-tree/fair-oct/data/compas-scores-two-years-ohe.csv"
-    )
-    print(compas_data)
-    df_compas_lazy = compas_data.lazy()
-    print(select_binary_features(df_compas_lazy).collect())
-    print(get_predicted_value(df_compas_lazy).collect())
+    # compas_data = pl.read_csv(
+    #     "/Users/masaharu/dev/academic-research/decision-tree/fair-oct/data/compas-scores-two-years-ohe.csv"
+    # )
+    # print(compas_data)
+    # df_compas_lazy = compas_data.lazy()
+    # print(select_binary_features(df_compas_lazy).collect())
+    # print(get_predicted_value(df_compas_lazy).collect())
+    print(create_nodes(3))
+    B, T = create_nodes(3)
+    Node = B + T
+    create_children(B, Node)

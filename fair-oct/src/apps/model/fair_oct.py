@@ -14,7 +14,7 @@ from modules.prep import (
     select_binary_features,
     create_feature_mapping,
     create_nodes,
-    create_ancestors,
+    create_ancestors, create_children,
 )
 
 
@@ -34,6 +34,9 @@ class Set(BaseModel):
 
     n_A: Dict[int, List[int]] = Field(
         default_factory=dict, description="ノードnと祖先集合A(n)の対応"
+    )
+    n_C: dict[int, dict[str, int]] = Field(
+        default_factory=dict, description="ノードnと子孫集合C(n)の対応"
     )
     x_i_f_value: Dict[int, Dict[str, int]] = Field(
         default_factory=dict, description="データiの特徴量fの値(0 or 1)"
@@ -62,6 +65,7 @@ class Set(BaseModel):
         B: List[int],
         T: List[int],
         n_A: Dict[int, List[int]],
+        n_C: Dict[int, dict[str, int]],
         x_i_f_value: Dict[int, Dict[str, int]],
         # 公平性制約はなくてもインスタンス化できるようにしておく
         P: Optional[List[Any]] = None,
@@ -80,6 +84,7 @@ class Set(BaseModel):
             "F": F,
             "K": K,
             "n_A": n_A,
+            "n_C": n_C,
             "x_i_f_value": x_i_f_value,
             "P": P or [],
             "x_i_p": x_i_p or {},
@@ -320,7 +325,7 @@ class FairOct(BaseModel):
                     if not I_pprime_l:
                         continue
                     name_prefix = f"CondStatParity_{p_val}_{p_prime}_l{legit_val}"
-                self._common_fair_constraint(I_p_l, I_pprime_l, name_prefix)
+                    self._common_fair_constraint(I_p_l, I_pprime_l, name_prefix)
 
     def _add_equalized_odds(self) -> None:
         """均等化オッズの制約を追加するメソッド"""
@@ -388,6 +393,74 @@ class FairOct(BaseModel):
             "solution": solution,
         }
 
+    def predict(self, X: pl.DataFrame) -> List[int]:
+        """
+        学習済みの決定木モデルから、入力データ X (Polars DataFrame) に対して予測を行う。
+        ここでは、最適化で得られた決定変数から各ブランチノードでの分割ルールと、
+        各葉ノードでのクラス割り当てを抽出し、完全二分木の構造（例: 左子 = 2*n, 右子 = 2*n+1）に基づいて予測を行う。
+        """
+        # まず、解の決定変数を抽出
+        b = self._variables["b"]  # (n, f): value
+        w = self._variables["w"]  # (n, k): value
+
+        # ツリー構造を再構築する（ここでは、完全二分木の構造を仮定）
+        tree = {}
+        # ブランチノード：各ノード n に対して、採用される分割特徴量を決定する
+        for n in self.set.B:
+            split_feature = None
+            for f in self.set.F:
+                # b[(n, f)] が1に近い（しきい値0.5以上）ものを選択
+                if b[(n, f)].x >= 0.5:
+                    split_feature = f
+                    break
+            tree[n] = {"split_feature": split_feature, "left": None, "right": None}
+        # 葉ノード：各ノード n に対して、クラス割り当てを決定する
+        for n in self.set.T:
+            pred = None
+            for k in self.set.K:
+                if w[(n, k)].x >= 0.5:
+                    pred = k
+                    break
+            tree[n] = {"prediction": pred}
+
+        # 子ノードの割り当て（完全二分木と仮定：ブランチノード n の左子 = 2*n, 右子 = 2*n+1）
+        all_nodes = set(self.set.B + self.set.T)
+        for n in self.set.B:
+            left = 2 * n
+            right = 2 * n + 1
+            if left in all_nodes:
+                tree[n]["left"] = left
+            if right in all_nodes:
+                tree[n]["right"] = right
+
+        # 予測処理：各サンプルについて、ルートから葉まで木をたどる
+        predictions = []
+        X_dicts = X.to_dicts()
+        # ルートノードは、仮に最小のブランチノードとする（例：n = min(B)）
+        root = min(self.set.B)
+        for sample in X_dicts:
+            current = root
+            while current in self.set.B:
+                split_feature = tree[current]["split_feature"]
+                # サンプルの該当特徴量の値を取得（存在しない場合は 0 とする）
+                value = sample.get(split_feature, 0)
+                if value == 0:
+                    current = tree[current].get("left")
+                else:
+                    current = tree[current].get("right")
+                if current is None:
+                    break
+            # 葉ノードに到達した場合、予測値を取得
+            if (
+                current is not None
+                and current in tree
+                and "prediction" in tree[current]
+            ):
+                predictions.append(tree[current]["prediction"])
+            else:
+                predictions.append(None)
+        return predictions
+
 
 def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
     compas = Cols().compas
@@ -395,12 +468,14 @@ def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
     df_features = df_features_lazy.collect()
     I = [num + 1 for num in range(len(list(df_features.rows())))]
     F = list(df_features.columns)
-    B, T = create_nodes(depth=2)
+    B, T = create_nodes(depth=4)
     # 人種
     P = data_fair.select(compas.race).unique().to_series().to_list()
     # 正当性属性の集合
     L = list(data_fair.select(compas.priors_count).unique().to_series())
     n_A = create_ancestors(B=B, T=T)
+    n_C = create_children(B=B, Node=B + T)
+    print("n_C:", n_C)
     x_i_f_value = create_feature_mapping(df_features)
     # 各データポイントの敏感属性
     x_i_p = {i: row[compas.race] for i, row in enumerate(data_fair.to_dicts(), start=1)}
@@ -422,6 +497,7 @@ def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
         B=B,
         T=T,
         n_A=n_A,
+        n_C=n_C,
         x_i_f_value=x_i_f_value,
         P=P,
         x_i_p=x_i_p,
@@ -429,20 +505,24 @@ def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
         L=L,
         x_i_legit=x_i_legit,
     )
-    fair_oct = FairOct(set=set_obj)
-    fair_oct.modeling()
-    fair_oct.add_fairness_constraints(
-        fairness_types=[
-            "statistical_parity",
-            "conditional_statistical_parity",
-            "equalized_odds",
-        ],
-    )
-    result = fair_oct.optimize(time_limit=params.time_limit)
-    #
-    print("ソルバー状態:", result["status"])
-    print("目的関数値:", result["objective"])
-    print("各変数の値:")
+    # fair_oct = FairOct(set=set_obj)
+    # fair_oct.modeling()
+    # fair_oct.add_fairness_constraints(
+    #     fairness_types=[
+    #         "statistical_parity",
+    #         "conditional_statistical_parity",
+    #         "equalized_odds",
+    #     ],
+    # )
+    # result = fair_oct.optimize(time_limit=params.time_limit)
+    # print("ソルバー状態:", result["status"])
+    # print("目的関数値:", result["objective"])
+    # print("各変数の値:")
+    # # 予測を行う（例として、訓練データと同じ df_features を用いる）
+    # predictions = fair_oct.predict(df_features)
+    # print("予測結果:", predictions)
+
+
     # # 必要に応じて解の変数値を表示
     # for var_cat, values in result["solution"].items():
     #     print(f"--- {var_cat} ---")
