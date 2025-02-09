@@ -49,17 +49,19 @@ def create_ancestors(B: List[int], T: List[int]) -> Dict[int, List[int]]:
         A: 各ノード n に対する祖先の辞書
     """
     nodes = B + T
-    A = {}
+    A = {0:[]}
     for n in nodes:
         ancestors = []
         parent = n // 2  # 親ノードを計算
+        if n == 1:
+            A[n] = [0]
+        else:
+            # ルートノードに達するまで祖先を辿る
+            while parent >= 1:
+                ancestors.append(parent)
+                parent = parent // 2  # さらに上の祖先へ
 
-        # ルートノードに達するまで祖先を辿る
-        while parent >= 1:
-            ancestors.append(parent)
-            parent = parent // 2  # さらに上の祖先へ
-
-        A[n] = ancestors[::-1]  # 上位の祖先から順に並べる
+            A[n] = ancestors[::-1]  # 上位の祖先から順に並べる
 
     return A
 
@@ -75,7 +77,7 @@ def create_children(B: List[int], Node: List[int]) -> Dict[int, dict[str, int]]:
     Returns:
         C: 各ノード n に対する子ノードの辞書
     """
-    C = {}
+    C = {0:{'left': 1}}
     for n in B:
         children = {}
         left_child = 2 * n  # 左の子ノード
@@ -123,4 +125,5 @@ if __name__ == "__main__":
     print(create_nodes(3))
     B, T = create_nodes(3)
     Node = B + T
-    create_children(B, Node)
+    print(create_ancestors(B, T))
+    print(create_children(B, Node))

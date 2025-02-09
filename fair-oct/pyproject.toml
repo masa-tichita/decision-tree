@@ -17,6 +17,7 @@ mip = "1.16.0pre"
 loguru = "^0.7.3"
 mlflow = "^2.19.0"
 fire = "^0.7.0"
+notebook = "^7.3.2"
 
 
 [tool.poetry.group.dev.dependencies]

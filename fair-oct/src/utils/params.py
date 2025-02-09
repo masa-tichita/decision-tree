@@ -11,4 +11,4 @@ class Param(BaseModel):
         return cls(depth=depth, delta=delta, time_limit=time_limit)
 
 
-params = Param.new(depth=2, delta=0.01, time_limit=300)
+params = Param.new(depth=2, delta=0.01, time_limit=10000)
