@@ -1,9 +1,10 @@
 import os
 import sys
 
+import mip
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
-from mip import Model, xsum, BINARY, MAXIMIZE, maximize
+from mip import Model, xsum, BINARY, maximize
 import polars as pl
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
@@ -96,199 +97,175 @@ class Set(BaseModel):
 
 
 class FairOct(BaseModel):
-    # 集合の定義
     set: Set
-    # 内部で保持するモデルと変数
     _model: Any = None
     _variables: Dict[str, Any] = {}
 
     def modeling(self) -> Model:
-        """
-        FairOct の定式化を python-mip で構築する。
-        目的関数: maximize Σ₍i∈I₎ Σ₍n∈B∪T₎ z₍i,a₎(n)
-        制約 (1a)～(1j) を追加する。
-        """
-        # 最大化問題としてモデルを生成
-        model = Model(sense=MAXIMIZE, solver_name="cbc")
-
-        # ノード集合: B ∪ T
+        model = Model(sense=mip.MAXIMIZE, solver_name="cbc")
         nodes = self.set.B + self.set.T
 
-        # 変数の定義
-        # 1. b_{n,f} (n ∈ B, f ∈ F)
+        # (a) b_{n,f}
         b = {
-            (n, f): model.add_var(name=f"b_{n}_{f}", var_type=BINARY)
+            (n, f): model.add_var(var_type=BINARY, name=f"b_{n}_{f}")
             for n in self.set.B
             for f in self.set.F
         }
 
-        # 2. p_n (n ∈ B∪T)
-        p = {n: model.add_var(name=f"p_{n}", var_type=BINARY) for n in nodes}
+        # (b) p_n
+        p = {n: model.add_var(var_type=BINARY, name=f"p_{n}") for n in nodes}
 
-        # 3. p_m (m ∈ A(n) for n ∈ B∪T)
-        p_m = {
-            (n, m): model.add_var(name=f"p_{n}_{m}", var_type=BINARY)
-            for n in nodes
-            for m in self.set.n_A.get(n, [])
-        }
-
-        # 4. z₍i,a₎(n) (i ∈ I, n ∈ B∪T)
+        # (d) z_a[i,n,a(n)]
         z_a = {
             (i, n, self.set.n_A[n][-1]): model.add_var(
-                name=f"z_a_{i}_{self.set.n_A[n][-1]}_{n}", var_type=BINARY
+                var_type=BINARY, name=f"z_a_{i}_{self.set.n_A[n][-1]}_{n}"
             )
             for i in self.set.I
             for n in nodes
-            if self.set.n_A[n]
+            if self.set.n_A[n]  # 祖先が存在
         }
 
-        # 5. z₍i,n,ℓ₎(n) および z₍i,n,r₎(n) (i ∈ I, n ∈ B)
-        z_left = {
-            (i, n, self.set.n_C.get(n).get("left")): model.add_var(
-                name=f"z_left_{i}_{n}_{self.set.n_C.get(n).get("left")}",
-                var_type=BINARY,
-            )
-            for i in self.set.I
-            for n in self.set.B
-        }
-        z_right = {
-            (i, n, self.set.n_C.get(n).get("right")): model.add_var(
-                name=f"z_right_{i}_{n}_{self.set.n_C.get(n).get("right")}",
-                var_type=BINARY,
-            )
-            for i in self.set.I
-            for n in self.set.B
-        }
+        # (e) z_left, z_right
+        # z_left = {
+        #     (i, n, self.set.n_C[n]["left"]): model.add_var(
+        #         var_type=BINARY, name=f"z_left_{i}_{n}_{self.set.n_C[n]['left']}"
+        #     )
+        #     for i in self.set.I
+        #     for n in self.set.B
+        # }
+        # z_right = {
+        #     (i, n, self.set.n_C[n]["right"]): model.add_var(
+        #         var_type=BINARY, name=f"z_right_{i}_{n}_{self.set.n_C[n]['right']}"
+        #     )
+        #     for i in self.set.I
+        #     for n in self.set.B
+        # }
 
-        # 6. z₍i,n,tₖ₎ (i ∈ I, n ∈ B∪T, k ∈ K)
+        # (f) z_t[i,n,k]
         z_t = {
-            (i, n, k): model.add_var(name=f"z_t_{i}_{n}_{k}", var_type=BINARY)
+            (i, n, k): model.add_var(var_type=BINARY, name=f"z_t_{i}_{n}_{k}")
             for i in self.set.I
             for n in nodes
             for k in self.set.K
         }
 
-        # 7. z₍i,s,1₎ (i ∈ I)
-        # z_s = {i: model.add_var(name=f"z_s_{i}", var_type=BINARY) for i in self.set.I}
-        # （変更後）
+        # (g) ルートフロー変数 z_root[(i,0,1)]
+        #     (root=0 の left子が 1 と想定。もし深さ>1ならルート子は1だけでなく...?)
         z_root = {}
-        s = 0  # 架空のrootノードID、または self.set.root など
-        root_child = 1  # ルートからの子ノード、1など
-
+        s = 0
+        root_child = 1  # ルート0 の left = 1
         for i in self.set.I:
             z_root[(i, s, root_child)] = model.add_var(
                 var_type=BINARY, name=f"z_root_{i}"
             )
 
-        # 8. w₍n,k₎ (n ∈ B∪T, k ∈ K)
+        # (h) w_{n,k}
         w = {
-            (n, k): model.add_var(name=f"w_{n}_{k}", var_type=BINARY)
+            (n, k): model.add_var(var_type=BINARY, name=f"w_{n}_{k}")
             for n in nodes
             for k in self.set.K
         }
 
-        # 制約 (1a): n ∈ B で、 Σ₍f∈F₎ bₙf + pₙ + Σ₍m∈A(n)₎ p_m = 1
+        # -----------------------------
+        # 2) 制約
+        # -----------------------------
+
+        # (1b)
         for n in self.set.B:
             expr = (
                 xsum(b[n, f] for f in self.set.F)
                 + p[n]
-                + xsum(p_m[(n, m)] for m in self.set.n_A.get(n, []))
+                + xsum(p[m] for m in self.set.n_A.get(n, []) if m)
             )
             model.add_constr(expr == 1, name=f"Constraint_1b_{n}")
 
-        # 制約 (1c): n ∈ T で、 pₙ + Σ₍m∈A(n)₎ p_m = 1
+        # (1c)
         for n in self.set.T:
-            expr = p[n] + xsum(p_m[(n, m)] for m in self.set.n_A.get(n, []))
+            expr = p[n] + xsum(p[m] for m in self.set.n_A.get(n, []) if m)
             model.add_constr(expr == 1, name=f"Constraint_1c_{n}")
 
-        # 制約 (1d): n ∈ B, ∀ i ∈ I,  z₍i,a₎(n) = z₍i,n,ℓ₎(n) + z₍i,n,r₎(n) + Σ₍k∈K₎ z₍i,n,tₖ₎
+        # (1d) ブランチフロー
         for n in self.set.B:
             for i in self.set.I:
+                # 左+右+Σ_k z_t = z_a[i,n, parent(n)]
                 expr = (
-                    z_left[i, n, self.set.n_C.get(n).get("left")]
-                    + z_right[i, n, self.set.n_C.get(n).get("right")]
+                        z_a[i, self.set.n_C[n]["left"], n]
+                    + z_a[i, self.set.n_C[n]["right"], n]
                     + xsum(z_t[i, n, k] for k in self.set.K)
                 )
-                if self.set.n_A.get(n):
+                if self.set.n_A[n]:
+                    parent_n = self.set.n_A[n][-1]
                     model.add_constr(
-                        z_a[i, n, self.set.n_A[n][-1]] == expr,
-                        name=f"Constraint_1d_{i}_{n}",
+                        z_a[(i, n, parent_n)] == expr, name=f"Constraint_1d_{i}_{n}"
                     )
-                else:
-                    continue
 
-        # 制約 (1e): n ∈ T, ∀ i ∈ I,  z₍i,a₎(n) = Σ₍k∈K₎ z₍i,n,tₖ₎
+        # (1e) 葉のフロー
         for n in self.set.T:
             for i in self.set.I:
                 expr = xsum(z_t[i, n, k] for k in self.set.K)
-                if self.set.n_A.get(n):
+                if self.set.n_A[n]:
+                    parent_n = self.set.n_A[n][-1]
                     model.add_constr(
-                        z_a[i, n, self.set.n_A[n][-1]] == expr,
-                        name=f"Constraint_1e_{i}_{n}",
+                        z_a[(i, n, parent_n)] == expr, name=f"Constraint_1e_{i}_{n}"
                     )
 
-        # 制約 (1f): ∀ i ∈ I,  z₍i,s,1₎ ≤ 1
-        # for i in self.set.I:
-        #     model.add_constr(z_s[i] == 1, name=f"Constraint_1f_{i}")
-        # rootは必ず流れる
+        # (1f) rootフローを必ず 1 にする or データが必ず木を通る想定なら
+        #      z_root[(i,0,1)] == 1
         for i in self.set.I:
             model.add_constr(
-                z_root[(i, s, root_child)] == 1, name=f"Constraint_root_flow_{i}"
+                z_root[(i, s, root_child)] <= 1, name=f"Constraint_root_flow_{i}"
             )
 
-        # 制約 (1g): n ∈ B, ∀ i ∈ I,  z₍i,n,ℓ₎(n) ≤ Σ₍f∈F: xᵢᶠ=0₎ bₙf
+        # (1g)/(1h)
         for n in self.set.B:
+            # left
             for i in self.set.I:
-                expr = xsum(
-                    b[n, f]
-                    for f in self.set.F
-                    if self.set.x_i_f_value.get(i, {}).get(f) == 0
+                expr_0 = xsum(
+                    b[(n, f)] for f in self.set.F if self.set.x_i_f_value[i][f] == 0
                 )
                 model.add_constr(
-                    z_left[i, n, self.set.n_C.get(n).get("left")] <= expr,
-                    name=f"Constraint_1g_{i}_{n}_{self.set.n_C.get(n).get('left')}",
+                    z_a[i, self.set.n_C[n]["left"], n] <= expr_0,
+                    name=f"Constraint_1g_{i}_{n}",
                 )
-
-        # 制約 (1h): n ∈ B, ∀ i ∈ I,  z₍i,n,r₎(n) ≤ Σ₍f∈F: xᵢᶠ=1₎ bₙf
-        for n in self.set.B:
+            # right
             for i in self.set.I:
-                expr = xsum(
-                    b[n, f]
-                    for f in self.set.F
-                    if self.set.x_i_f_value.get(i, {}).get(f) == 1
+                expr_1 = xsum(
+                    b[(n, f)] for f in self.set.F if self.set.x_i_f_value[i][f] == 1
                 )
                 model.add_constr(
-                    z_right[i, n, self.set.n_C.get(n).get("right")] <= expr,
-                    name=f"Constraint_1h_{i}_{n}_{self.set.n_C.get(n).get('right')}",
+                    z_a[i, self.set.n_C[n]["right"], n] <= expr_1,
+                    name=f"Constraint_1h_{i}_{n}",
                 )
 
-        # 制約 (1i): ∀ n ∈ B∪T, ∀ i ∈ I, ∀ k ∈ K,  z₍i,n,tₖ₎ ≤ w₍n,k₎
+        # (1i)
         for n in nodes:
             for i in self.set.I:
                 for k in self.set.K:
                     model.add_constr(
-                        z_t[i, n, k] <= w[n, k], name=f"Constraint_1i_{i}_{n}_{k}"
+                        z_t[(i, n, k)] <= w[(n, k)], name=f"Constraint_1i_{i}_{n}_{k}"
                     )
 
-        # --- 制約 (1j): ∀ n ∈ B∪T,  Σ₍k∈K₎ w₍n,k₎ = pₙ ---
+        # (1j)
         for n in nodes:
-            expr = xsum(w[n, k] for k in self.set.K)
+            expr = xsum(w[(n, k)] for k in self.set.K)
             model.add_constr(expr == p[n], name=f"Constraint_1j_{n}")
 
-        # --- 目的関数 ---
-        # maximize Σ₍i∈I₎ Σ₍n∈B∪T₎ z₍i,a₎(n)
+        # -----------------------------
+        # 3) 目的関数 (単に正解ラベルz_tを合計)
+        # -----------------------------
         model.objective = maximize(
-            xsum(z_t[i, n, self.set.x_i_y[i]] for i in self.set.I for n in nodes)
+            xsum(z_t[(i, n, self.set.x_i_y[i])] for i in self.set.I for n in nodes)
         )
-        # 内部保持用に変数群とモデルを保存
+        # model.objective = -xsum(z_t[(i, n, self.set.x_i_y[i])] for i in self.set.I for n in nodes)
+
+        # 内部保存
         self._model = model
         self._variables = {
             "b": b,
             "p": p,
-            "p_m": p_m,
             "z_a": z_a,
-            "z_left": z_left,
-            "z_right": z_right,
+            # "z_left": z_left,
+            # "z_right": z_right,
             "z_t": z_t,
             "z_s": z_root,
             "w": w,
@@ -445,64 +422,68 @@ class FairOct(BaseModel):
             print(key, var.x)
         for key, var in self._variables["w"].items():
             print(key, var.x)
+        for key, var in self._variables["p"].items():
+            print(key, var.x)
+        for key, var in self._variables["z_a"].items():
+            print(key, var.x)
 
-            # # ツリー構造を再構築する（ここでは、完全二分木の構造を仮定）
-            # tree = {}
-            # # ブランチノード：各ノード n に対して、採用される分割特徴量を決定する
-            # for n in self.set.B:
-            #     split_feature = None
-            #     for f in self.set.F:
-            #         # b[(n, f)] が1に近い（しきい値0.5以上）ものを選択
-            #         if b[(n, f)].x >= 0.5:
-            #             split_feature = f
-            #             break
-            #     tree[n] = {"split_feature": split_feature, "left": None, "right": None}
-            # # 葉ノード：各ノード n に対して、クラス割り当てを決定する
-            # for n in self.set.T:
-            #     pred = None
-            #     for k in self.set.K:
-            #         if w[(n, k)].x >= 0.5:
-            #             pred = k
-            #             break
-            #     tree[n] = {"prediction": pred}
-            #
-            # # 子ノードの割り当て（完全二分木と仮定：ブランチノード n の左子 = 2*n, 右子 = 2*n+1）
-            # all_nodes = set(self.set.B + self.set.T)
-            # for n in self.set.B:
-            #     left = 2 * n
-            #     right = 2 * n + 1
-            #     if left in all_nodes:
-            #         tree[n]["left"] = left
-            #     if right in all_nodes:
-            #         tree[n]["right"] = right
-            #
-            # # 予測処理：各サンプルについて、ルートから葉まで木をたどる
-            # predictions = []
-            # X_dicts = X.to_dicts()
-            # # ルートノードは、仮に最小のブランチノードとする（例：n = min(B)）
-            # root = min(self.set.B)
-            # for sample in X_dicts:
-            #     current = root
-            #     while current in self.set.B:
-            #         split_feature = tree[current]["split_feature"]
-            #         # サンプルの該当特徴量の値を取得（存在しない場合は 0 とする）
-            #         value = sample.get(split_feature, 0)
-            #         if value == 0:
-            #             current = tree[current].get("left")
-            #         else:
-            #             current = tree[current].get("right")
-            #         if current is None:
-            #             break
-            #     # 葉ノードに到達した場合、予測値を取得
-            #     if (
-            #         current is not None
-            #         and current in tree
-            #         and "prediction" in tree[current]
-            #     ):
-            #         predictions.append(tree[current]["prediction"])
-            #     else:
-            #         predictions.append(None)
-            # return predictions
+        # # ツリー構造を再構築する（ここでは、完全二分木の構造を仮定）
+        tree = {}
+        # ブランチノード：各ノード n に対して、採用される分割特徴量を決定する
+        for n in self.set.B:
+            split_feature = None
+            for f in self.set.F:
+                # b[(n, f)] が1に近い（しきい値0.5以上）ものを選択
+                if b[(n, f)].x >= 0.5:
+                    split_feature = f
+                    break
+            tree[n] = {"split_feature": split_feature, "left": None, "right": None}
+        # 葉ノード：各ノード n に対して、クラス割り当てを決定する
+        for n in self.set.T:
+            pred = None
+            for k in self.set.K:
+                if w[(n, k)].x >= 0.5:
+                    pred = k
+                    break
+            tree[n] = {"prediction": pred}
+
+        # 子ノードの割り当て（完全二分木と仮定：ブランチノード n の左子 = 2*n, 右子 = 2*n+1）
+        all_nodes = set(self.set.B + self.set.T)
+        for n in self.set.B:
+            left = 2 * n
+            right = 2 * n + 1
+            if left in all_nodes:
+                tree[n]["left"] = left
+            if right in all_nodes:
+                tree[n]["right"] = right
+
+        # 予測処理：各サンプルについて、ルートから葉まで木をたどる
+        predictions = []
+        X_dicts = X.to_dicts()
+        # ルートノードは、仮に最小のブランチノードとする（例：n = min(B)）
+        root = min(self.set.B)
+        for sample in X_dicts:
+            current = root
+            while current in self.set.B:
+                split_feature = tree[current]["split_feature"]
+                # サンプルの該当特徴量の値を取得（存在しない場合は 0 とする）
+                value = sample.get(split_feature, 0)
+                if value == 0:
+                    current = tree[current].get("left")
+                else:
+                    current = tree[current].get("right")
+                if current is None:
+                    break
+            # 葉ノードに到達した場合、予測値を取得
+            if (
+                current is not None
+                and current in tree
+                and "prediction" in tree[current]
+            ):
+                predictions.append(tree[current]["prediction"])
+            else:
+                predictions.append(None)
+        return predictions
 
 
 def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
@@ -559,8 +540,6 @@ def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
     result = fair_oct.optimize(time_limit=params.time_limit)
     print("ソルバー状態:", result["status"])
     print("目的関数値:", result["objective"])
-    # # print("各変数の値:")
-    # # # 予測を行う（例として、訓練データと同じ df_features を用いる）
     predictions = fair_oct.predict(df_features)
     print("予測結果:", predictions)
 
@@ -572,4 +551,32 @@ if __name__ == "__main__":
     df_fair = pl.read_csv(
         "/Users/masaharu/dev/academic-research/decision-tree/fair-oct/data/compas-scores-two-years-filtered.csv"
     )
+    # (A) ダミーの One-Hot エンコード済みデータ
+    # (1) 上記の小規模データを定義
+    # df_compas_one_hot = pl.DataFrame(
+    #     {
+    #         # "race_AfricanAmerican": [1, 0, 1, 0, 1, 0],
+    #         # "race_Caucasian":       [0, 1, 0, 1, 0, 1],
+    #         "f1": [0, 1, 0, 1, 0, 1],
+    #         "f2": [0, 0, 1, 1, 0, 0],
+    #         "is_recid": [0, 1, 0, 1, 0, 1],
+    #     }
+    # )
+    # df_fair = pl.DataFrame(
+    #     {
+    #         "race": [
+    #             "African-American",
+    #             "Caucasian",
+    #             "African-American",
+    #             "Caucasian",
+    #             "African-American",
+    #             "Caucasian",
+    #         ],
+    #         "priors_count": [0, 1, 2, 3, 4, 5],
+    #         "is_recid": [0, 1, 0, 1, 0, 1],
+    #     }
+    # )
+
+    # fair_oct_result を呼ぶ
     fair_oct_result(df_compas_one_hot.lazy(), df_fair)
+    # fair_oct_result(df_compas_one_hot.lazy(), df_fair)

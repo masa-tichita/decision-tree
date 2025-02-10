@@ -49,7 +49,7 @@ def create_ancestors(B: List[int], T: List[int]) -> Dict[int, List[int]]:
         A: 各ノード n に対する祖先の辞書
     """
     nodes = B + T
-    A = {0:[]}
+    A = {0: []}
     for n in nodes:
         ancestors = []
         parent = n // 2  # 親ノードを計算
@@ -77,7 +77,7 @@ def create_children(B: List[int], Node: List[int]) -> Dict[int, dict[str, int]]:
     Returns:
         C: 各ノード n に対する子ノードの辞書
     """
-    C = {0:{'left': 1}}
+    C = {0: {"left": 1}}
     for n in B:
         children = {}
         left_child = 2 * n  # 左の子ノード
