@@ -16,6 +16,10 @@ from modules.prep import (
     create_nodes,
     create_ancestors,
     create_children,
+    create_date_point_index_and_features,
+    create_sensitive_features_and_not_sensitive_features,
+    create_sensitive_and_no_sensitive_mapping,
+    create_true_labels,
 )
 
 
@@ -457,29 +461,29 @@ class FairOct(BaseModel):
 
 def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
     compas = Cols().compas
-    df_features_lazy = select_binary_features(data)
-    df_features = df_features_lazy.collect()
-    I = [num + 1 for num in range(len(list(df_features.rows())))]
-    F = list(df_features.columns)
+    df_one_hot_feature_lazy = select_binary_features(data)
+    df_one_hot_feature_binary = df_one_hot_feature_lazy.collect()
+    I, F = create_date_point_index_and_features(data=df_one_hot_feature_binary)
     B, T = create_nodes(depth=params.depth)
-    # 人種
-    P = data_fair.select(compas.race).unique().to_series().to_list()
-    # 正当性属性の集合
-    L = list(data_fair.select(compas.priors_count).unique().to_series())
+    # Pはセンシティブ属性の集合、Lは正当性属性の集合
+    # 例: P: 人種, L: 前科の回数
+    P, L = create_sensitive_features_and_not_sensitive_features(data_fair)
     n_A = create_ancestors(B=B, T=T)
     n_C = create_children(B=B, Node=B + T)
-    x_i_f_value = create_feature_mapping(df_features)
-    # 各データポイントの敏感属性
-    x_i_p = {i: row[compas.race] for i, row in enumerate(data_fair.to_dicts(), start=1)}
+    x_i_f_value = create_feature_mapping(df_one_hot_feature_binary)
+    # # 各データポイントのセンシティブ属性
+    # x_i_p = {i: row[compas.race] for i, row in enumerate(data_fair.to_dicts(), start=1)}
+    # # 各データポイントの正当性属性
+    # x_i_legit = {
+    #     i: row[compas.priors_count]
+    #     for i, row in enumerate(data_fair.to_dicts(), start=1)
+    # }
+    x_i_p, x_i_legit = create_sensitive_and_no_sensitive_mapping(data_fair)
     # 各データポイントの真のラベル
-    x_i_y = {
-        i: row[compas.is_recid] for i, row in enumerate(data_fair.to_dicts(), start=1)
-    }
-    # 各データポイントの正当性属性
-    x_i_legit = {
-        i: row[compas.priors_count]
-        for i, row in enumerate(data_fair.to_dicts(), start=1)
-    }
+    # x_i_y = {
+    #     i: row[compas.is_recid] for i, row in enumerate(data_fair.to_dicts(), start=1)
+    # }
+    x_i_y = create_true_labels(data_fair)
     set_obj = Set.new(
         depth=params.depth,
         delta=params.delta,
@@ -509,7 +513,7 @@ def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
     result = fair_oct.optimize(time_limit=params.time_limit)
     print("ソルバー状態:", result["status"])
     print("目的関数値:", result["objective"])
-    predictions = fair_oct.predict(df_features)
+    predictions = fair_oct.predict(df_one_hot_feature_binary)
     print("予測結果:", predictions)
 
 
@@ -522,6 +526,7 @@ if __name__ == "__main__":
     # )
     # (A) ダミーの One-Hot エンコード済みデータ
     # (1) 上記の小規模データを定義
+
     df_compas_one_hot = pl.DataFrame(
         {
             # "race_AfricanAmerican": [1, 0, 1, 0, 1, 0],

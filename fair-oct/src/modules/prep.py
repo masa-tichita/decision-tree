@@ -24,6 +24,28 @@ def select_binary_features(lazy_frame: pl.LazyFrame) -> pl.LazyFrame:
     )
 
 
+def create_date_point_index_and_features(
+    data: pl.DataFrame,
+) -> tuple[list[int], list[str]]:
+    """データポイントのインデックスのリストを作成する関数
+    Args:
+        data: データフレーム
+    Returns:
+        データポイントのインデックスのリスト, 特徴量のリスト
+    """
+    return [num + 1 for num in range(len(list(data.rows())))], list(data.columns)
+
+
+def create_sensitive_features_and_not_sensitive_features(
+    data: pl.DataFrame,
+) -> tuple[list[str], list[str]]:
+    # センシティブ属性の集合
+    P = sorted(data.select(compas.race).unique().to_series().to_list())
+    # 正当性属性の集合
+    L = sorted(list(data.select(compas.priors_count).unique().to_series()))
+    return P, L
+
+
 def get_predicted_value(lazy_frame: pl.LazyFrame) -> pl.LazyFrame:
     return lazy_frame.select(pl.col(compas.is_recid))
 
@@ -112,6 +134,21 @@ def create_feature_mapping(df: pl.DataFrame) -> Dict[int, Dict[str, int]]:
         x[idx] = {feature: value for feature, value in row.items()}
 
     return x
+
+
+def create_sensitive_and_no_sensitive_mapping(df: pl.DataFrame) -> tuple[dict, dict]:
+    # 各データポイントのセンシティブ属性
+    x_i_p = {i: row[compas.race] for i, row in enumerate(df.to_dicts(), start=1)}
+    # 各データポイントの正当性属性
+    x_i_legit = {
+        i: row[compas.priors_count] for i, row in enumerate(df.to_dicts(), start=1)
+    }
+    return x_i_p, x_i_legit
+
+
+def create_true_labels(df: pl.DataFrame) -> dict:
+    # 各データポイントの真のラベル
+    return {i: row[compas.is_recid] for i, row in enumerate(df.to_dicts(), start=1)}
 
 
 if __name__ == "__main__":
