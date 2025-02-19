@@ -8,7 +8,6 @@ from mip import Model, xsum, BINARY, maximize
 import polars as pl
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
-from utils.const import Cols
 from utils.params import params
 from modules.prep import (
     select_binary_features,
@@ -460,7 +459,6 @@ class FairOct(BaseModel):
 
 
 def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
-    compas = Cols().compas
     df_one_hot_feature_lazy = select_binary_features(data)
     df_one_hot_feature_binary = df_one_hot_feature_lazy.collect()
     I, F = create_date_point_index_and_features(data=df_one_hot_feature_binary)
@@ -471,18 +469,10 @@ def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
     n_A = create_ancestors(B=B, T=T)
     n_C = create_children(B=B, Node=B + T)
     x_i_f_value = create_feature_mapping(df_one_hot_feature_binary)
-    # # 各データポイントのセンシティブ属性
-    # x_i_p = {i: row[compas.race] for i, row in enumerate(data_fair.to_dicts(), start=1)}
-    # # 各データポイントの正当性属性
-    # x_i_legit = {
-    #     i: row[compas.priors_count]
-    #     for i, row in enumerate(data_fair.to_dicts(), start=1)
-    # }
+    # 各データポイントのセンシティブ属性
+    # 各データポイントの正当性属性
     x_i_p, x_i_legit = create_sensitive_and_no_sensitive_mapping(data_fair)
     # 各データポイントの真のラベル
-    # x_i_y = {
-    #     i: row[compas.is_recid] for i, row in enumerate(data_fair.to_dicts(), start=1)
-    # }
     x_i_y = create_true_labels(data_fair)
     set_obj = Set.new(
         depth=params.depth,
