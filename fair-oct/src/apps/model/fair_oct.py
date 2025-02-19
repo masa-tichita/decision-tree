@@ -117,29 +117,13 @@ class FairOct(BaseModel):
 
         # (d) z_a[i,n,a(n)]
         z_a = {
-            (i, n, self.set.n_A[n][-1]): model.add_var(
+            (i, self.set.n_A[n][-1], n): model.add_var(
                 var_type=BINARY, name=f"z_a_{i}_{self.set.n_A[n][-1]}_{n}"
             )
             for i in self.set.I
             for n in nodes
-            if self.set.n_A[n]  # 祖先が存在
+            if self.set.n_A[n]
         }
-
-        # (e) z_left, z_right
-        # z_left = {
-        #     (i, n, self.set.n_C[n]["left"]): model.add_var(
-        #         var_type=BINARY, name=f"z_left_{i}_{n}_{self.set.n_C[n]['left']}"
-        #     )
-        #     for i in self.set.I
-        #     for n in self.set.B
-        # }
-        # z_right = {
-        #     (i, n, self.set.n_C[n]["right"]): model.add_var(
-        #         var_type=BINARY, name=f"z_right_{i}_{n}_{self.set.n_C[n]['right']}"
-        #     )
-        #     for i in self.set.I
-        #     for n in self.set.B
-        # }
 
         # (f) z_t[i,n,k]
         z_t = {
@@ -149,8 +133,6 @@ class FairOct(BaseModel):
             for k in self.set.K
         }
 
-        # (g) ルートフロー変数 z_root[(i,0,1)]
-        #     (root=0 の left子が 1 と想定。もし深さ>1ならルート子は1だけでなく...?)
         z_root = {}
         s = 0
         root_child = 1  # ルート0 の left = 1
@@ -165,10 +147,6 @@ class FairOct(BaseModel):
             for n in nodes
             for k in self.set.K
         }
-
-        # -----------------------------
-        # 2) 制約
-        # -----------------------------
 
         # (1b)
         for n in self.set.B:
@@ -189,14 +167,14 @@ class FairOct(BaseModel):
             for i in self.set.I:
                 # 左+右+Σ_k z_t = z_a[i,n, parent(n)]
                 expr = (
-                        z_a[i, self.set.n_C[n]["left"], n]
-                    + z_a[i, self.set.n_C[n]["right"], n]
+                    z_a[i, n, self.set.n_C[n]["left"]]
+                    + z_a[i, n, self.set.n_C[n]["right"]]
                     + xsum(z_t[i, n, k] for k in self.set.K)
                 )
                 if self.set.n_A[n]:
                     parent_n = self.set.n_A[n][-1]
                     model.add_constr(
-                        z_a[(i, n, parent_n)] == expr, name=f"Constraint_1d_{i}_{n}"
+                        z_a[(i, parent_n, n)] == expr, name=f"Constraint_1d_{i}_{n}"
                     )
 
         # (1e) 葉のフロー
@@ -206,11 +184,9 @@ class FairOct(BaseModel):
                 if self.set.n_A[n]:
                     parent_n = self.set.n_A[n][-1]
                     model.add_constr(
-                        z_a[(i, n, parent_n)] == expr, name=f"Constraint_1e_{i}_{n}"
+                        z_a[(i, parent_n, n)] == expr, name=f"Constraint_1e_{i}_{n}"
                     )
 
-        # (1f) rootフローを必ず 1 にする or データが必ず木を通る想定なら
-        #      z_root[(i,0,1)] == 1
         for i in self.set.I:
             model.add_constr(
                 z_root[(i, s, root_child)] <= 1, name=f"Constraint_root_flow_{i}"
@@ -224,7 +200,7 @@ class FairOct(BaseModel):
                     b[(n, f)] for f in self.set.F if self.set.x_i_f_value[i][f] == 0
                 )
                 model.add_constr(
-                    z_a[i, self.set.n_C[n]["left"], n] <= expr_0,
+                    z_a[i, n, self.set.n_C[n]["left"]] <= expr_0,
                     name=f"Constraint_1g_{i}_{n}",
                 )
             # right
@@ -233,7 +209,7 @@ class FairOct(BaseModel):
                     b[(n, f)] for f in self.set.F if self.set.x_i_f_value[i][f] == 1
                 )
                 model.add_constr(
-                    z_a[i, self.set.n_C[n]["right"], n] <= expr_1,
+                    z_a[i, n, self.set.n_C[n]["right"]] <= expr_1,
                     name=f"Constraint_1h_{i}_{n}",
                 )
 
@@ -250,22 +226,15 @@ class FairOct(BaseModel):
             expr = xsum(w[(n, k)] for k in self.set.K)
             model.add_constr(expr == p[n], name=f"Constraint_1j_{n}")
 
-        # -----------------------------
-        # 3) 目的関数 (単に正解ラベルz_tを合計)
-        # -----------------------------
         model.objective = maximize(
             xsum(z_t[(i, n, self.set.x_i_y[i])] for i in self.set.I for n in nodes)
         )
-        # model.objective = -xsum(z_t[(i, n, self.set.x_i_y[i])] for i in self.set.I for n in nodes)
 
-        # 内部保存
         self._model = model
         self._variables = {
             "b": b,
             "p": p,
             "z_a": z_a,
-            # "z_left": z_left,
-            # "z_right": z_right,
             "z_t": z_t,
             "z_s": z_root,
             "w": w,
@@ -416,16 +385,16 @@ class FairOct(BaseModel):
         各葉ノードでのクラス割り当てを抽出し、完全二分木の構造（例: 左子 = 2*n, 右子 = 2*n+1）に基づいて予測を行う。
         """
         # まず、解の決定変数を抽出
-        b = self._variables["b"]  # (n, f): value
-        w = self._variables["w"]  # (n, k): value
+        b = self._variables["b"]
+        w = self._variables["w"]
         for key, var in self._variables["b"].items():
-            print(key, var.x)
+            print("変数：b_n_f", key, var.x)
         for key, var in self._variables["w"].items():
-            print(key, var.x)
+            print("変数: w_n_k", key, var.x)
         for key, var in self._variables["p"].items():
-            print(key, var.x)
+            print("変数: p_n", key, var.x)
         for key, var in self._variables["z_a"].items():
-            print(key, var.x)
+            print("変数: z_n_a(n)", key, var.x)
 
         # # ツリー構造を再構築する（ここでは、完全二分木の構造を仮定）
         tree = {}
@@ -545,37 +514,37 @@ def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
 
 
 if __name__ == "__main__":
-    df_compas_one_hot = pl.read_csv(
-        "/Users/masaharu/dev/academic-research/decision-tree/fair-oct/data/compas-scores-two-years-ohe.csv"
-    )
-    df_fair = pl.read_csv(
-        "/Users/masaharu/dev/academic-research/decision-tree/fair-oct/data/compas-scores-two-years-filtered.csv"
-    )
+    # df_compas_one_hot = pl.read_csv(
+    #     "/Users/masaharu/dev/academic-research/decision-tree/fair-oct/data/compas-scores-two-years-ohe.csv"
+    # )
+    # df_fair = pl.read_csv(
+    #     "/Users/masaharu/dev/academic-research/decision-tree/fair-oct/data/compas-scores-two-years-filtered.csv"
+    # )
     # (A) ダミーの One-Hot エンコード済みデータ
     # (1) 上記の小規模データを定義
-    # df_compas_one_hot = pl.DataFrame(
-    #     {
-    #         # "race_AfricanAmerican": [1, 0, 1, 0, 1, 0],
-    #         # "race_Caucasian":       [0, 1, 0, 1, 0, 1],
-    #         "f1": [0, 1, 0, 1, 0, 1],
-    #         "f2": [0, 0, 1, 1, 0, 0],
-    #         "is_recid": [0, 1, 0, 1, 0, 1],
-    #     }
-    # )
-    # df_fair = pl.DataFrame(
-    #     {
-    #         "race": [
-    #             "African-American",
-    #             "Caucasian",
-    #             "African-American",
-    #             "Caucasian",
-    #             "African-American",
-    #             "Caucasian",
-    #         ],
-    #         "priors_count": [0, 1, 2, 3, 4, 5],
-    #         "is_recid": [0, 1, 0, 1, 0, 1],
-    #     }
-    # )
+    df_compas_one_hot = pl.DataFrame(
+        {
+            # "race_AfricanAmerican": [1, 0, 1, 0, 1, 0],
+            # "race_Caucasian":       [0, 1, 0, 1, 0, 1],
+            "f1": [0, 1, 0, 1, 0, 1],
+            "f2": [0, 0, 1, 1, 0, 0],
+            "is_recid": [0, 1, 0, 1, 0, 1],
+        }
+    )
+    df_fair = pl.DataFrame(
+        {
+            "race": [
+                "African-American",
+                "Caucasian",
+                "African-American",
+                "Caucasian",
+                "African-American",
+                "Caucasian",
+            ],
+            "priors_count": [0, 1, 2, 3, 4, 5],
+            "is_recid": [0, 1, 0, 1, 0, 1],
+        }
+    )
 
     # fair_oct_result を呼ぶ
     fair_oct_result(df_compas_one_hot.lazy(), df_fair)
