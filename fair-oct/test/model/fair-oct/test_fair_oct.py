@@ -39,9 +39,7 @@ def test_constraint_1c(fair_oct_instance_without_fairness_constraint):
             f"Constraint 1c failed for leaf node {n}: p[{n}]={p[n]}, sum_anc={sum_anc}, lhs={lhs}"
         )
 
-# (1d) ブランチフローの制約：
-#     （nがブランチでかつ祖先が存在する場合）
-#     z_a[i, parent(n), n] == z_a[i, n, left] + z_a[i, n, right] + Σ_k z_t[i, n, k]
+# (1d) ブランチノードのフローの制約：
 def test_constraint_1d(fair_oct_instance_without_fairness_constraint):
     opt_instance, instance = fair_oct_instance_without_fairness_constraint
     solution = opt_instance.get("solution")
@@ -65,8 +63,6 @@ def test_constraint_1d(fair_oct_instance_without_fairness_constraint):
                 )
 
 # (1e) 葉のフローの制約：
-#     （祖先が存在する葉について）
-#     z_a[i, parent(n), n] == Σ_k z_t[i, n, k]
 def test_constraint_1e(fair_oct_instance_without_fairness_constraint):
     opt_instance, instance = fair_oct_instance_without_fairness_constraint
     solution = opt_instance.get("solution")
