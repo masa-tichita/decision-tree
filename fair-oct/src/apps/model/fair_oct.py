@@ -249,27 +249,27 @@ class FairOct(BaseModel):
         self, I_p: List[int], I_pprime: List[int], name_prefix: str
     ) -> None:
         """
-        共通の公平性制約（2方向の不均衡を制限する制約）を追加するヘルパーメソッド。
+        公平性制約における共通処理
         引数:
           - I_p: グループ p に属するデータポイントの集合
           - I_pprime: グループ p' に属するデータポイントの集合
           - name_prefix: 制約名の接頭辞（例："StatParity_p1_p2" など）
         """
         nodes = self.set.B + self.set.T  # 全ノード
-        A = len(I_p)
-        B_count = len(I_pprime)
-        if A == 0 or B_count == 0:
+        a_count = len(I_p)
+        b_count = len(I_pprime)
+        if a_count == 0 or b_count == 0:
             return
         expr_p = xsum(self._variables["z_t"][(i, n, 1)] for i in I_p for n in nodes)
         expr_pprime = xsum(
             self._variables["z_t"][(i, n, 1)] for i in I_pprime for n in nodes
         )
         self._model.add_constr(
-            B_count * expr_p - A * expr_pprime <= self.set.delta * A * B_count,
+            b_count * expr_p - a_count * expr_pprime <= self.set.delta * a_count * b_count,
             name=f"{name_prefix}_1",
         )
         self._model.add_constr(
-            B_count * expr_pprime - A * expr_p <= self.set.delta * A * B_count,
+            b_count * expr_pprime - a_count * expr_p <= self.set.delta * a_count * b_count,
             name=f"{name_prefix}_2",
         )
 
@@ -279,6 +279,7 @@ class FairOct(BaseModel):
             I_p = [i for i in self.set.I if self.set.x_i_p.get(i) == p_val]
             if not I_p:
                 continue
+            # p_valとは異なるpを探索する
             for p_prime in self.set.P:
                 if p_val == p_prime:
                     continue

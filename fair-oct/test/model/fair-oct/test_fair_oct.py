@@ -19,10 +19,6 @@ def test_constraint_1b(fair_oct_instance_without_fairness_constraint):
         # 祖先リストから、値が 0 (False) と判定されるノードは除外
         sum_anc = sum(p[m] for m in set_obj.n_A.get(n, []) if m)
         lhs = sum_b + p[n] + sum_anc
-        # assert isclose(lhs, 1, abs_tol=TOL), (
-        #     f"Constraint 1b failed for branch node {n}: "
-        #     f"sum_b={sum_b}, p[{n}]={p[n]}, sum_anc={sum_anc}, lhs={lhs}"
-        # )
         assert lhs == 1
 
 # (1c) 葉ノードの制約：
@@ -36,9 +32,6 @@ def test_constraint_1c(fair_oct_instance_without_fairness_constraint):
     for n in set_obj.T:
         sum_anc = sum(p[m] for m in set_obj.n_A.get(n, []) if m)
         lhs = p[n] + sum_anc
-        # assert isclose(lhs, 1, abs_tol=TOL), (
-        #     f"Constraint 1c failed for leaf node {n}: p[{n}]={p[n]}, sum_anc={sum_anc}, lhs={lhs}"
-        # )
         assert lhs == 1
 
 # (1d) ブランチノードのフローの制約：
@@ -59,10 +52,6 @@ def test_constraint_1d(fair_oct_instance_without_fairness_constraint):
                 lhs = z_a[(i, parent_n, n)]
                 rhs = z_a[(i, n, left_child)] + z_a[(i, n, right_child)] \
                       + sum(z_t[(i, n, k)] for k in set_obj.K)
-                # assert isclose(lhs, rhs, abs_tol=TOL), (
-                #     f"Constraint 1d failed for i={i}, branch node {n}: "
-                #     f"lhs (z_a[{i},{parent_n},{n}])={lhs}, rhs={rhs}"
-                # )
                 assert lhs == rhs
 
 # (1e) 葉のフローの制約：
@@ -79,10 +68,6 @@ def test_constraint_1e(fair_oct_instance_without_fairness_constraint):
             for i in set_obj.I:
                 lhs = z_a[(i, parent_n, n)]
                 rhs = sum(z_t[(i, n, k)] for k in set_obj.K)
-                # assert isclose(lhs, rhs, abs_tol=TOL), (
-                #     f"Constraint 1e failed for i={i}, leaf node {n}: "
-                #     f"lhs (z_a[{i},{parent_n},{n}])={lhs}, rhs={rhs}"
-                # )
                 assert lhs == rhs
 
 # ルートフローの制約：
@@ -96,9 +81,6 @@ def test_constraint_root_flow(fair_oct_instance_without_fairness_constraint):
     root_child = 1
     for i in set_obj.I:
         val = z_root[(i, s, root_child)]
-        # assert val <= 1 + TOL, (
-        #     f"Constraint root flow failed for i={i}: z_root[(i,0,1)]={val} > 1"
-        # )
         assert val <= 1
 
 # (1g) と (1h) 分割ルールの制約：
@@ -118,18 +100,10 @@ def test_constraint_1g_1h(fair_oct_instance_without_fairness_constraint):
             # 左側 (x_i_f_value==0)
             expr_left = sum(b[(n, f)] for f in set_obj.F if set_obj.x_i_f_value[i][f] == 0)
             val_left = z_a[(i, n, left_child)]
-            # assert val_left <= expr_left + TOL, (
-            #     f"Constraint 1g failed for i={i}, branch node {n}: "
-            #     f"z_a[{i},{n},{left_child}]={val_left} > expr_left={expr_left}"
-            # )
             assert val_left <= expr_left
             # 右側 (x_i_f_value==1)
             expr_right = sum(b[(n, f)] for f in set_obj.F if set_obj.x_i_f_value[i][f] == 1)
             val_right = z_a[(i, n, right_child)]
-            # assert val_right <= expr_right + TOL, (
-            #     f"Constraint 1h failed for i={i}, branch node {n}: "
-            #     f"z_a[{i},{n},{right_child}]={val_right} > expr_right={expr_right}"
-            # )
             assert val_right <= expr_right
 
 # (1i) フローとクラス割り当ての制約：
@@ -147,10 +121,6 @@ def test_constraint_1i(fair_oct_instance_without_fairness_constraint):
             for k in set_obj.K:
                 val_z_t = z_t[(i, n, k)]
                 val_w = w[(n, k)]
-                # assert val_z_t <= val_w + TOL, (
-                #     f"Constraint 1i failed for i={i}, node {n}, class {k}: "
-                #     f"z_t={(i,n,k)}={val_z_t} > w[{n},{k}]={val_w}"
-                # )
                 assert val_z_t <= val_w
 
 # (1j) 葉・ブランチにおける p と w の関係の制約：
@@ -165,7 +135,4 @@ def test_constraint_1j(fair_oct_instance_without_fairness_constraint):
 
     for n in nodes:
         sum_w = sum(w[(n, k)] for k in set_obj.K)
-        # assert isclose(sum_w, p[n], abs_tol=TOL), (
-        #     f"Constraint 1j failed for node {n}: sum_w={sum_w} != p[{n}]={p[n]}"
-        # )
         assert sum_w == p[n]
