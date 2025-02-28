@@ -42,7 +42,7 @@ def create_sensitive_features_and_not_sensitive_features(
     # センシティブ属性の集合
     P = sorted(data.select(compas.race).unique().to_series().to_list())
     # 正当性属性の集合
-    L = sorted(list(data.select(compas.priors_count).unique().to_series()))
+    L = sorted(list(data.select(compas.two_year_recid).unique().to_series()))
     return P, L
 
 
@@ -140,8 +140,9 @@ def create_sensitive_and_no_sensitive_mapping(df: pl.DataFrame) -> tuple[dict, d
     # 各データポイントのセンシティブ属性
     x_i_p = {i: row[compas.race] for i, row in enumerate(df.to_dicts(), start=1)}
     # 各データポイントの正当性属性
+    print(df.to_dicts())
     x_i_legit = {
-        i: row[compas.priors_count] for i, row in enumerate(df.to_dicts(), start=1)
+        i: row[compas.two_year_recid] for i, row in enumerate(df.to_dicts(), start=1)
     }
     return x_i_p, x_i_legit
 

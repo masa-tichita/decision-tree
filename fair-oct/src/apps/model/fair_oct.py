@@ -118,7 +118,7 @@ class FairOct(BaseModel):
         # (b) p_n
         p = {n: model.add_var(var_type=BINARY, name=f"p_{n}") for n in nodes}
 
-        # (d) z_a[i,n,a(n)]
+        # (d) z_a[i,a(n), n]
         z_a = {
             (i, self.set.n_A[n][-1], n): model.add_var(
                 var_type=BINARY, name=f"z_a_{i}_{self.set.n_A[n][-1]}_{n}"
@@ -398,65 +398,70 @@ class FairOct(BaseModel):
         for key, var in self._variables["p"].items():
             print("変数: p_n", key, var.x)
         for key, var in self._variables["z_a"].items():
-            print("変数: z_n_a(n)", key, var.x)
+            # print("変数: z_n_a(n)", key, var.x)
+            if var.x == 1:
+                print("変数: z_n_a(n)", key, var.x)
+        for key, var in self._variables["z_t"].items():
+            if var.x == 1:
+                print("変数: z_t_i_n_k", key, var.x)
 
-        # # ツリー構造を再構築する（ここでは、完全二分木の構造を仮定）
-        tree = {}
-        # ブランチノード：各ノード n に対して、採用される分割特徴量を決定する
-        for n in self.set.B:
-            split_feature = None
-            for f in self.set.F:
-                # b[(n, f)] が1に近い（しきい値0.5以上）ものを選択
-                if b[(n, f)].x >= 0.5:
-                    split_feature = f
-                    break
-            tree[n] = {"split_feature": split_feature, "left": None, "right": None}
-        # 葉ノード：各ノード n に対して、クラス割り当てを決定する
-        for n in self.set.T:
-            pred = None
-            for k in self.set.K:
-                if w[(n, k)].x >= 0.5:
-                    pred = k
-                    break
-            tree[n] = {"prediction": pred}
-
-        # 子ノードの割り当て（完全二分木と仮定：ブランチノード n の左子 = 2*n, 右子 = 2*n+1）
-        all_nodes = set(self.set.B + self.set.T)
-        for n in self.set.B:
-            left = 2 * n
-            right = 2 * n + 1
-            if left in all_nodes:
-                tree[n]["left"] = left
-            if right in all_nodes:
-                tree[n]["right"] = right
-
-        # 予測処理：各サンプルについて、ルートから葉まで木をたどる
-        predictions = []
-        X_dicts = X.to_dicts()
-        # ルートノードは、仮に最小のブランチノードとする（例：n = min(B)）
-        root = min(self.set.B)
-        for sample in X_dicts:
-            current = root
-            while current in self.set.B:
-                split_feature = tree[current]["split_feature"]
-                # サンプルの該当特徴量の値を取得（存在しない場合は 0 とする）
-                value = sample.get(split_feature, 0)
-                if value == 0:
-                    current = tree[current].get("left")
-                else:
-                    current = tree[current].get("right")
-                if current is None:
-                    break
-            # 葉ノードに到達した場合、予測値を取得
-            if (
-                current is not None
-                and current in tree
-                and "prediction" in tree[current]
-            ):
-                predictions.append(tree[current]["prediction"])
-            else:
-                predictions.append(None)
-        return predictions
+        # # # ツリー構造を再構築する（ここでは、完全二分木の構造を仮定）
+        # tree = {}
+        # # ブランチノード：各ノード n に対して、採用される分割特徴量を決定する
+        # for n in self.set.B:
+        #     split_feature = None
+        #     for f in self.set.F:
+        #         # b[(n, f)] が1に近い（しきい値0.5以上）ものを選択
+        #         if b[(n, f)].x >= 0.5:
+        #             split_feature = f
+        #             break
+        #     tree[n] = {"split_feature": split_feature, "left": None, "right": None}
+        # # 葉ノード：各ノード n に対して、クラス割り当てを決定する
+        # for n in self.set.T:
+        #     pred = None
+        #     for k in self.set.K:
+        #         if w[(n, k)].x >= 0.5:
+        #             pred = k
+        #             break
+        #     tree[n] = {"prediction": pred}
+        #
+        # # 子ノードの割り当て（完全二分木と仮定：ブランチノード n の左子 = 2*n, 右子 = 2*n+1）
+        # all_nodes = set(self.set.B + self.set.T)
+        # for n in self.set.B:
+        #     left = 2 * n
+        #     right = 2 * n + 1
+        #     if left in all_nodes:
+        #         tree[n]["left"] = left
+        #     if right in all_nodes:
+        #         tree[n]["right"] = right
+        #
+        # # 予測処理：各サンプルについて、ルートから葉まで木をたどる
+        # predictions = []
+        # X_dicts = X.to_dicts()
+        # # ルートノードは、仮に最小のブランチノードとする（例：n = min(B)）
+        # root = min(self.set.B)
+        # for sample in X_dicts:
+        #     current = root
+        #     while current in self.set.B:
+        #         split_feature = tree[current]["split_feature"]
+        #         # サンプルの該当特徴量の値を取得（存在しない場合は 0 とする）
+        #         value = sample.get(split_feature, 0)
+        #         if value == 0:
+        #             current = tree[current].get("left")
+        #         else:
+        #             current = tree[current].get("right")
+        #         if current is None:
+        #             break
+        #     # 葉ノードに到達した場合、予測値を取得
+        #     if (
+        #         current is not None
+        #         and current in tree
+        #         and "prediction" in tree[current]
+        #     ):
+        #         predictions.append(tree[current]["prediction"])
+        #     else:
+        #         predictions.append(None)
+        # return predictions
 
 
 def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
@@ -465,7 +470,7 @@ def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
     I, F = create_date_point_index_and_features(data=df_one_hot_feature_binary)
     B, T = create_nodes(depth=params.depth)
     # Pはセンシティブ属性の集合、Lは正当性属性の集合
-    # 例: P: 人種, L: 前科の回数
+    # 例: P: 人種, L: 2年のうちに再犯したかどうかのバイナリ
     P, L = create_sensitive_features_and_not_sensitive_features(data_fair)
     n_A = create_ancestors(B=B, T=T)
     n_C = create_children(B=B, Node=B + T)
@@ -518,29 +523,63 @@ if __name__ == "__main__":
     # (A) ダミーの One-Hot エンコード済みデータ
     # (1) 上記の小規模データを定義
 
-    df_compas_one_hot = pl.DataFrame(
-        {
-            # "race_AfricanAmerican": [1, 0, 1, 0, 1, 0],
-            # "race_Caucasian":       [0, 1, 0, 1, 0, 1],
-            "f1": [0, 1, 0, 1, 0, 1],
-            "f2": [0, 0, 1, 1, 0, 0],
-            "is_recid": [0, 1, 0, 1, 0, 1],
-        }
-    )
-    df_fair = pl.DataFrame(
-        {
-            "race": [
-                "African-American",
-                "Caucasian",
-                "African-American",
-                "Caucasian",
-                "African-American",
-                "Caucasian",
-            ],
-            "priors_count": [0, 1, 2, 3, 4, 5],
-            "is_recid": [0, 1, 0, 1, 0, 1],
-        }
-    )
+    # df_compas_one_hot = pl.DataFrame(
+    #     {
+    #         "f1": [0, 1, 0, 1, 0, 1],
+    #         "f2": [0, 0, 1, 1, 0, 0],
+    #         "is_recid": [0, 1, 0, 1, 0, 1],
+    #     }
+    # )
+    # df_fair = pl.DataFrame(
+    #     {
+    #         "race": [
+    #             "African-American",
+    #             "Caucasian",
+    #             "African-American",
+    #             "Caucasian",
+    #             "African-American",
+    #             "Caucasian",
+    #         ],
+    #         "two_year_recid": [0, 1, 1, 1, 1, 0],
+    #         "is_recid": [0, 1, 0, 1, 0, 1],
+    #     }
+    # )
+    # sampleデータ2
+    # df_compas_one_hot = pl.DataFrame({
+    #     "f1": [0, 1, 0, 1, 0, 1, 0, 1],
+    #     "f2": [0, 0, 1, 1, 0, 0, 1, 1],
+    #     "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
+    #     "is_recid": [0, 1, 0, 1, 0, 1, 0, 1]
+    # })
+    #
+    # # df_fair: センシティブ属性として race、正当性属性やターゲット変数として two_year_recid, is_recid を含む
+    # df_fair = pl.DataFrame({
+    #     "race": [
+    #         "African-American", "African-American", "African-American", "African-American",
+    #         "Caucasian", "Caucasian", "Caucasian", "Caucasian"
+    #     ],
+    #     "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
+    #     "is_recid": [0, 1, 0, 1, 0, 1, 0, 1]
+    # })
+
+    # sampleデータ3
+    df_compas_one_hot = pl.DataFrame({
+        "f1": [0, 1, 0, 1, 0, 1, 0, 1],
+        "f2": [0, 0, 1, 1, 0, 0, 1, 1],
+        "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
+        "is_recid": [1, 1, 0, 0, 1, 1, 0, 0]
+    })
+
+    # df_fair: センシティブ属性として race、正当性属性やターゲット変数として two_year_recid, is_recid を含む
+    df_fair = pl.DataFrame({
+        "race": [
+            "African-American", "African-American", "African-American", "African-American",
+            "Caucasian", "Caucasian", "Caucasian", "Caucasian"
+        ],
+        "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
+        "is_recid": [1, 1, 0, 0, 1, 1, 0, 0]
+    })
+
 
     # fair_oct_result を呼ぶ
     fair_oct_result(df_compas_one_hot.lazy(), df_fair)
