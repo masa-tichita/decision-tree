@@ -107,22 +107,13 @@ def test_create_sensitive_and_no_sensitive_mapping(create_data_include_sensitive
         1: "African-American",
         2: "African-American",
         3: "African-American",
-        4: 	"African-American",
-        5: 	"Caucasian",
-        6: 	"Caucasian",
-        7: 	"Caucasian",
-        8: 	"Caucasian"
+        4: "African-American",
+        5: "Caucasian",
+        6: "Caucasian",
+        7: "Caucasian",
+        8: "Caucasian",
     }
-    assert no_sensitive_mapping == {
-        1: 0,
-        2: 0,
-        3: 1,
-        4: 1,
-        5: 0,
-        6: 0,
-        7: 1,
-        8: 1
-    }
+    assert no_sensitive_mapping == {1: 0, 2: 0, 3: 1, 4: 1, 5: 0, 6: 0, 7: 1, 8: 1}
 
 
 def test_create_true_labels(create_data_include_sensitive_data):

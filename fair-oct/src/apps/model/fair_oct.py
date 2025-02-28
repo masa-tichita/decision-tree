@@ -229,8 +229,12 @@ class FairOct(BaseModel):
             expr = xsum(w[(n, k)] for k in self.set.K)
             model.add_constr(expr == p[n], name=f"Constraint_1j_{n}")
 
+        # TODO: 試し強制的に1の制約をいれる
+        # model.add_constr(z_t[(2, 3, 1)] == 1, name="Constraint_1i_2_3_1")
+
         model.objective = maximize(
             xsum(z_t[(i, n, self.set.x_i_y[i])] for i in self.set.I for n in nodes)
+            - xsum(b[(n, f)] for n in self.set.B for f in self.set.F) * 0.01
         )
 
         self._model = model
@@ -265,11 +269,13 @@ class FairOct(BaseModel):
             self._variables["z_t"][(i, n, 1)] for i in I_pprime for n in nodes
         )
         self._model.add_constr(
-            b_count * expr_p - a_count * expr_pprime <= self.set.delta * a_count * b_count,
+            b_count * expr_p - a_count * expr_pprime
+            <= self.set.delta * a_count * b_count,
             name=f"{name_prefix}_1",
         )
         self._model.add_constr(
-            b_count * expr_pprime - a_count * expr_p <= self.set.delta * a_count * b_count,
+            b_count * expr_pprime - a_count * expr_p
+            <= self.set.delta * a_count * b_count,
             name=f"{name_prefix}_2",
         )
 
@@ -402,8 +408,8 @@ class FairOct(BaseModel):
             if var.x == 1:
                 print("変数: z_n_a(n)", key, var.x)
         for key, var in self._variables["z_t"].items():
-            if var.x == 1:
-                print("変数: z_t_i_n_k", key, var.x)
+            # if var.x == 1:
+            print("変数: z_t_i_n_k", key, var.x)
 
         # # # ツリー構造を再構築する（ここでは、完全二分木の構造を仮定）
         # tree = {}
@@ -499,13 +505,13 @@ def fair_oct_result(data: pl.LazyFrame, data_fair: pl.DataFrame):
     )
     fair_oct = FairOct(set=set_obj)
     fair_oct.modeling()
-    # fair_oct.add_fairness_constraints(
-    #     fairness_types=[
-    #         "statistical_parity",
-    #         "conditional_statistical_parity",
-    #         "equalized_odds",
-    #     ],
-    # )
+    fair_oct.add_fairness_constraints(
+        fairness_types=[
+            "statistical_parity",
+            "conditional_statistical_parity",
+            "equalized_odds",
+        ],
+    )
     result = fair_oct.optimize(time_limit=params.time_limit)
     print("ソルバー状態:", result["status"])
     print("目的関数値:", result["objective"])
@@ -527,6 +533,7 @@ if __name__ == "__main__":
     #     {
     #         "f1": [0, 1, 0, 1, 0, 1],
     #         "f2": [0, 0, 1, 1, 0, 0],
+    #         "two_year_recid": [0, 1, 1, 1, 1, 0],
     #         "is_recid": [0, 1, 0, 1, 0, 1],
     #     }
     # )
@@ -545,41 +552,60 @@ if __name__ == "__main__":
     #     }
     # )
     # sampleデータ2
-    # df_compas_one_hot = pl.DataFrame({
-    #     "f1": [0, 1, 0, 1, 0, 1, 0, 1],
-    #     "f2": [0, 0, 1, 1, 0, 0, 1, 1],
-    #     "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
-    #     "is_recid": [0, 1, 0, 1, 0, 1, 0, 1]
-    # })
-    #
-    # # df_fair: センシティブ属性として race、正当性属性やターゲット変数として two_year_recid, is_recid を含む
-    # df_fair = pl.DataFrame({
-    #     "race": [
-    #         "African-American", "African-American", "African-American", "African-American",
-    #         "Caucasian", "Caucasian", "Caucasian", "Caucasian"
-    #     ],
-    #     "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
-    #     "is_recid": [0, 1, 0, 1, 0, 1, 0, 1]
-    # })
-
-    # sampleデータ3
-    df_compas_one_hot = pl.DataFrame({
-        "f1": [0, 1, 0, 1, 0, 1, 0, 1],
-        "f2": [0, 0, 1, 1, 0, 0, 1, 1],
-        "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
-        "is_recid": [1, 1, 0, 0, 1, 1, 0, 0]
-    })
+    df_compas_one_hot = pl.DataFrame(
+        {
+            "f1": [0, 1, 0, 1, 0, 1, 0, 1],
+            "f2": [0, 0, 1, 1, 0, 0, 1, 1],
+            "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
+            "is_recid": [0, 1, 0, 1, 0, 1, 0, 1],
+        }
+    )
 
     # df_fair: センシティブ属性として race、正当性属性やターゲット変数として two_year_recid, is_recid を含む
-    df_fair = pl.DataFrame({
-        "race": [
-            "African-American", "African-American", "African-American", "African-American",
-            "Caucasian", "Caucasian", "Caucasian", "Caucasian"
-        ],
-        "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
-        "is_recid": [1, 1, 0, 0, 1, 1, 0, 0]
-    })
+    df_fair = pl.DataFrame(
+        {
+            "race": [
+                "African-American",
+                "African-American",
+                "African-American",
+                "African-American",
+                "Caucasian",
+                "Caucasian",
+                "Caucasian",
+                "Caucasian",
+            ],
+            "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
+            "is_recid": [0, 1, 0, 1, 0, 1, 0, 1],
+        }
+    )
 
+    # sampleデータ3
+    # df_compas_one_hot = pl.DataFrame(
+    #     {
+    #         "f1": [0, 1, 0, 1, 0, 1, 0, 1],
+    #         "f2": [0, 0, 1, 1, 0, 0, 1, 1],
+    #         "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
+    #         "is_recid": [1, 0, 0, 0, 1, 1, 0, 0],
+    #     }
+    # )
+    #
+    # # df_fair: センシティブ属性として race、正当性属性やターゲット変数として two_year_recid, is_recid を含む
+    # df_fair = pl.DataFrame(
+    #     {
+    #         "race": [
+    #             "African-American",
+    #             "African-American",
+    #             "African-American",
+    #             "African-American",
+    #             "Caucasian",
+    #             "Caucasian",
+    #             "Caucasian",
+    #             "Caucasian",
+    #         ],
+    #         "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
+    #         "is_recid": [1, 0, 0, 0, 1, 1, 0, 0],
+    #     }
+    # )
 
     # fair_oct_result を呼ぶ
     fair_oct_result(df_compas_one_hot.lazy(), df_fair)

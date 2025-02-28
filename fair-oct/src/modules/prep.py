@@ -160,8 +160,8 @@ if __name__ == "__main__":
     # df_compas_lazy = compas_data.lazy()
     # print(select_binary_features(df_compas_lazy).collect())
     # print(get_predicted_value(df_compas_lazy).collect())
-    print(create_nodes(3))
-    B, T = create_nodes(3)
+    print(create_nodes(2))
+    B, T = create_nodes(2)
     Node = B + T
-    print(create_ancestors(B, T))
-    print(create_children(B, Node))
+    print("nに対する祖先集合", create_ancestors(B, T)[3][-1])
+    print("nに対する子の集合", create_children(B, Node)[3]["left"])

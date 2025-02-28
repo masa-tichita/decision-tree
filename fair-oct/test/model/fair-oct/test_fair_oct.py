@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 from utils.params import params
 
@@ -21,6 +22,7 @@ def test_constraint_1b(oct_instance_without_fairness_constraint):
         lhs = sum_b + p[n] + sum_anc
         assert lhs == 1
 
+
 # (1c) 葉ノードの制約：
 #     p[n] + Σ_{m∈A(n), m≠0} p[m] == 1
 def test_constraint_1c(oct_instance_without_fairness_constraint):
@@ -33,6 +35,7 @@ def test_constraint_1c(oct_instance_without_fairness_constraint):
         sum_anc = sum(p[m] for m in set_obj.n_A.get(n, []) if m)
         lhs = p[n] + sum_anc
         assert lhs == 1
+
 
 # (1d) ブランチノードのフローの制約：
 def test_constraint_1d(oct_instance_without_fairness_constraint):
@@ -50,9 +53,13 @@ def test_constraint_1d(oct_instance_without_fairness_constraint):
                 left_child = set_obj.n_C[n]["left"]
                 right_child = set_obj.n_C[n]["right"]
                 lhs = z_a[(i, parent_n, n)]
-                rhs = z_a[(i, n, left_child)] + z_a[(i, n, right_child)] \
-                      + sum(z_t[(i, n, k)] for k in set_obj.K)
+                rhs = (
+                    z_a[(i, n, left_child)]
+                    + z_a[(i, n, right_child)]
+                    + sum(z_t[(i, n, k)] for k in set_obj.K)
+                )
                 assert lhs == rhs
+
 
 # (1e) 葉のフローの制約：
 def test_constraint_1e(oct_instance_without_fairness_constraint):
@@ -70,6 +77,7 @@ def test_constraint_1e(oct_instance_without_fairness_constraint):
                 rhs = sum(z_t[(i, n, k)] for k in set_obj.K)
                 assert lhs == rhs
 
+
 # ルートフローの制約：
 #     z_root[(i, s, root_child)] <= 1, ここでは s=0, root_child=1 としている
 def test_constraint_root_flow(oct_instance_without_fairness_constraint):
@@ -82,6 +90,7 @@ def test_constraint_root_flow(oct_instance_without_fairness_constraint):
     for i in set_obj.I:
         val = z_root[(i, s, root_child)]
         assert val <= 1
+
 
 # (1g) と (1h) 分割ルールの制約：
 #     (1g): z_a[i, n, left] <= Σ_{f: x_i_f==0} b[n,f]
@@ -98,13 +107,18 @@ def test_constraint_1g_1h(oct_instance_without_fairness_constraint):
         right_child = set_obj.n_C[n]["right"]
         for i in set_obj.I:
             # 左側 (x_i_f_value==0)
-            expr_left = sum(b[(n, f)] for f in set_obj.F if set_obj.x_i_f_value[i][f] == 0)
+            expr_left = sum(
+                b[(n, f)] for f in set_obj.F if set_obj.x_i_f_value[i][f] == 0
+            )
             val_left = z_a[(i, n, left_child)]
             assert val_left <= expr_left
             # 右側 (x_i_f_value==1)
-            expr_right = sum(b[(n, f)] for f in set_obj.F if set_obj.x_i_f_value[i][f] == 1)
+            expr_right = sum(
+                b[(n, f)] for f in set_obj.F if set_obj.x_i_f_value[i][f] == 1
+            )
             val_right = z_a[(i, n, right_child)]
             assert val_right <= expr_right
+
 
 # (1i) フローとクラス割り当ての制約：
 #     z_t[i, n, k] <= w[n,k]  （n はブランチも葉も含む）
@@ -122,6 +136,7 @@ def test_constraint_1i(oct_instance_without_fairness_constraint):
                 val_z_t = z_t[(i, n, k)]
                 val_w = w[(n, k)]
                 assert val_z_t <= val_w
+
 
 # (1j) 葉・ブランチにおける p と w の関係の制約：
 #     Σ_k w[n,k] == p[n] （n はブランチも葉も）
@@ -168,8 +183,11 @@ def test_statistical_parity_constraint(oct_instance_without_fairness_constraint)
                 f"diff={diff}, allowed={max_allowed}"
             )
 
+
 # テスト例2: 条件付き統計的パリティの公平性制約が満たされているか
-def test_conditional_statistical_parity_constraint(oct_instance_without_fairness_constraint):
+def test_conditional_statistical_parity_constraint(
+    oct_instance_without_fairness_constraint,
+):
     _, fair_oct = oct_instance_without_fairness_constraint
     # "conditional_statistical_parity" を追加
     fair_oct.add_fairness_constraints(fairness_types=["conditional_statistical_parity"])
@@ -181,11 +199,21 @@ def test_conditional_statistical_parity_constraint(oct_instance_without_fairness
     # 条件付きの場合、L の各値（正当性属性の値）ごとに制約が適用される
     for legit_val in set_obj.L:
         for p_val in set_obj.P:
-            I_p_l = [i for i in set_obj.I if set_obj.x_i_p.get(i) == p_val and set_obj.x_i_legit.get(i) == legit_val]
+            I_p_l = [
+                i
+                for i in set_obj.I
+                if set_obj.x_i_p.get(i) == p_val
+                and set_obj.x_i_legit.get(i) == legit_val
+            ]
             for p_prime in set_obj.P:
                 if p_val == p_prime:
                     continue
-                I_pprime_l = [i for i in set_obj.I if set_obj.x_i_p.get(i) == p_prime and set_obj.x_i_legit.get(i) == legit_val]
+                I_pprime_l = [
+                    i
+                    for i in set_obj.I
+                    if set_obj.x_i_p.get(i) == p_prime
+                    and set_obj.x_i_legit.get(i) == legit_val
+                ]
                 if not I_p_l or not I_pprime_l:
                     continue
                 expr_p = sum(z_t[(i, n, 1)] for i in I_p_l for n in nodes)
@@ -196,6 +224,7 @@ def test_conditional_statistical_parity_constraint(oct_instance_without_fairness
                     f"Conditional Statistical Parity constraint violated for groups {p_val} vs {p_prime} "
                     f"with legit value {legit_val}: diff={diff}, allowed={max_allowed}"
                 )
+
 
 # テスト例3: 均等化オッズの公平性制約が満たされているか
 def test_equalized_odds_constraint(oct_instance_without_fairness_constraint):
@@ -209,11 +238,19 @@ def test_equalized_odds_constraint(oct_instance_without_fairness_constraint):
     nodes = set_obj.B + set_obj.T
     for k in set_obj.K:
         for p_val in set_obj.P:
-            I_p_k = [i for i in set_obj.I if set_obj.x_i_p.get(i) == p_val and set_obj.x_i_y.get(i) == k]
+            I_p_k = [
+                i
+                for i in set_obj.I
+                if set_obj.x_i_p.get(i) == p_val and set_obj.x_i_y.get(i) == k
+            ]
             for p_prime in set_obj.P:
                 if p_val == p_prime:
                     continue
-                I_pprime_k = [i for i in set_obj.I if set_obj.x_i_p.get(i) == p_prime and set_obj.x_i_y.get(i) == k]
+                I_pprime_k = [
+                    i
+                    for i in set_obj.I
+                    if set_obj.x_i_p.get(i) == p_prime and set_obj.x_i_y.get(i) == k
+                ]
                 if not I_p_k or not I_pprime_k:
                     continue
                 expr_p = sum(z_t[(i, n, 1)] for i in I_p_k for n in nodes)

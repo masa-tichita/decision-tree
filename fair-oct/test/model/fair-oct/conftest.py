@@ -3,13 +3,22 @@ import sys
 
 import pytest
 import polars as pl
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../../src/"))
 from apps.model.fair_oct import Set, FairOct
-from modules.prep import select_binary_features, create_date_point_index_and_features, create_nodes, \
-    create_sensitive_features_and_not_sensitive_features, create_ancestors, create_children, create_feature_mapping, \
-    create_sensitive_and_no_sensitive_mapping, create_true_labels
+from modules.prep import (
+    select_binary_features,
+    create_date_point_index_and_features,
+    create_nodes,
+    create_sensitive_features_and_not_sensitive_features,
+    create_ancestors,
+    create_children,
+    create_feature_mapping,
+    create_sensitive_and_no_sensitive_mapping,
+    create_true_labels,
+)
 from utils.params import params
-import polars as pl
+
 
 @pytest.fixture
 def create_raw_one_hot_data():
@@ -43,12 +52,12 @@ def create_raw_one_hot_data():
                 "2015-01-26 03:45:00",
                 "2014-04-13 04:58:00",
                 "2015-08-14 06:03:00",
-                "2014-01-26 03:45:00"
+                "2014-01-26 03:45:00",
             ],
             "f1": [0, 1, 0, 1, 0, 1, 0, 1],
             "f2": [0, 0, 1, 1, 0, 0, 1, 1],
             "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
-            "is_recid": [0, 1, 0, 1, 0, 1, 0, 1]
+            "is_recid": [0, 1, 0, 1, 0, 1, 0, 1],
         }
     )
 
@@ -66,19 +75,28 @@ def create_one_hot_data():
 
 @pytest.fixture
 def create_data_include_sensitive_data():
-    return pl.DataFrame({
-        "race": [
-            "African-American", "African-American", "African-American", "African-American",
-            "Caucasian", "Caucasian", "Caucasian", "Caucasian"
-        ],
-        "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
-        "is_recid": [0, 1, 0, 1, 0, 1, 0, 1]
-    })
-
+    return pl.DataFrame(
+        {
+            "race": [
+                "African-American",
+                "African-American",
+                "African-American",
+                "African-American",
+                "Caucasian",
+                "Caucasian",
+                "Caucasian",
+                "Caucasian",
+            ],
+            "two_year_recid": [0, 0, 1, 1, 0, 0, 1, 1],
+            "is_recid": [0, 1, 0, 1, 0, 1, 0, 1],
+        }
+    )
 
 
 @pytest.fixture
-def oct_instance_without_fairness_constraint(create_one_hot_data, create_data_include_sensitive_data):
+def oct_instance_without_fairness_constraint(
+    create_one_hot_data, create_data_include_sensitive_data
+):
     data = create_one_hot_data.lazy()
     data_fair = create_data_include_sensitive_data
     df_one_hot_feature_lazy = select_binary_features(data)
